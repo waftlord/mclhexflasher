@@ -2,6 +2,8 @@
 
 MCL Hex Flasher is a browser-based Intel HEX firmware updater for the ATmega2560 on MegaCommand DIY and MegaCMD hardware. It programs the main microcontroller through its serial bootloader using Web Serial.
 
+[Open MCL Hex Flasher](https://wftlrd.uk/mclhexflasher/)
+
 ## Requirements
 
 - Desktop Chrome or Edge with Web Serial support. Serve the app over HTTPS or run it on `localhost`.
