@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle2, Cpu, Download, FileCode2, PlugZap, RotateC
 import { flashFirmware, FlashProgress } from './avr/flasher';
 import { FirmwareImage, readHexFile, summarizeHex } from './avr/intelHex';
 import { DEFAULT_PROFILE_ID, getProfile, HARDWARE_PROFILES, HardwareProfile } from './avr/profiles';
-import { isProjectUpgraderFile, MCL_REMOTE_HEX_FIRMWARE } from './firmware/catalog';
+import { isProjectUpgraderFile, MCL_REMOTE_HEX_FIRMWARE, type RemoteHexFirmware } from './firmware/catalog';
+import { hasBundledHex, loadBundledHex } from './firmware/bundledHex';
 import { getMclFirmwareDownloadOptions } from './firmware/githubReleases';
 import { createLogEntry, downloadTextFile, LogEntry, LogLevel, logEntriesToText } from './lib/logger';
 import { formatBytes, formatHexAddress, formatUsbId } from './lib/format';
@@ -43,16 +44,6 @@ function resetStrategyLabel(profile: HardwareProfile): string {
   return 'Arduino reset';
 }
 
-function DeviceUpgradeSteps() {
-  return (
-    <ol className="upgrade-steps">
-      <li>At <strong>SCAN FOR PROJECTS?</strong>, press <strong>Load / Yes</strong> to scan the SD card, or <strong>Save / No</strong> to stop. Scanning only reads the card.</li>
-      <li>Review the results (UPGRADE, UP TO DATE or CAN’T READ). At <strong>UPGRADE n PROJECTS?</strong>, press <strong>Load / Yes</strong> to convert them. Keep the device powered throughout conversion.</li>
-      <li>When the display says <strong>NOW UPGRADE TO MCL 5.10</strong>, return to OS UPGRADE or serial mode and flash the MCL firmware from <strong>Latest stable</strong>.</li>
-    </ol>
-  );
-}
-
 export function App() {
   const [profileId, setProfileId] = useState(DEFAULT_PROFILE_ID);
   const profile = useMemo(() => getProfile(profileId), [profileId]);
@@ -72,6 +63,7 @@ export function App() {
   const [midiMessage, setMidiMessage] = useState<string | null>(null);
   const [midiError, setMidiError] = useState<string | null>(null);
   const [downloads, setDownloads] = useState(MCL_REMOTE_HEX_FIRMWARE);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [awaitingDevice, setAwaitingDevice] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -284,62 +276,46 @@ export function App() {
     void handleFile(file);
   }
 
-  async function handleFile(file: File | null, profileForValidation = profile): Promise<boolean> {
-    const readId = fileReadIdRef.current + 1;
-    fileReadIdRef.current = readId;
+  async function handleFile(source: File | RemoteHexFirmware | null, profileForValidation = profile): Promise<void> {
+    const readId = ++fileReadIdRef.current;
+    const localFile = source instanceof File ? source : null;
+    const official = source && !(source instanceof File) ? source : null;
 
-    setFirmwareFile(file);
+    setFirmwareFile(localFile);
     setFirmwareImage(null);
     setHexError(null);
     setLastError(null);
-
-    if (!file) return false;
-
-    if (!HEX_FILE_EXTENSION.test(file.name)) {
-      const message = 'Choose a firmware file with a .hex extension.';
-      setHexError(message);
-      setLastError(message);
-      setProgress({ stage: 'error', percent: selectedPort ? 35 : 20, message: 'HEX validation failed.' });
-      log('error', `HEX validation failed: ${message}`);
-      return false;
-    }
-
-    if (file.size === 0) {
-      const message = 'The selected HEX file is empty.';
-      setHexError(message);
-      setLastError(message);
-      setProgress({ stage: 'error', percent: selectedPort ? 35 : 20, message: 'HEX validation failed.' });
-      log('error', `HEX validation failed: ${message}`);
-      return false;
-    }
-
-    if (file.size > MAX_HEX_FILE_BYTES) {
-      const message = `The selected file is ${formatBytes(file.size)}; the safety limit is ${formatBytes(MAX_HEX_FILE_BYTES)}.`;
-      setHexError(message);
-      setLastError(message);
-      setProgress({ stage: 'error', percent: selectedPort ? 35 : 20, message: 'HEX validation failed.' });
-      log('error', `HEX validation failed: ${message}`);
-      return false;
-    }
+    setLoadingId(official?.id ?? null);
+    if (!source) return;
+    if (official && fileInputRef.current) fileInputRef.current.value = '';
+    setProgress({ stage: 'idle', percent: selectedPort ? 10 : 0, message: 'Loading HEX…' });
 
     try {
+      const file = official ? await loadBundledHex(official) : localFile;
+      if (!file || readId !== fileReadIdRef.current) return;
+      setFirmwareFile(file);
+      if (!HEX_FILE_EXTENSION.test(file.name)) throw new Error('Choose a firmware file with a .hex extension.');
+      if (!file.size) throw new Error('The selected HEX file is empty.');
+      if (file.size > MAX_HEX_FILE_BYTES) {
+        throw new Error(`The selected file is ${formatBytes(file.size)}. The limit is ${formatBytes(MAX_HEX_FILE_BYTES)}.`);
+      }
       const image = await readHexFile(file);
-      if (readId !== fileReadIdRef.current) return false;
+      if (readId !== fileReadIdRef.current) return;
       if (image.maxAddressExclusive > profileForValidation.flashSize) {
         throw new Error(`HEX ends at ${formatHexAddress(image.maxAddressExclusive)}, beyond ${profileForValidation.mcu} flash size ${formatHexAddress(profileForValidation.flashSize)}.`);
       }
       setFirmwareImage(image);
       const fileSummary = summarizeHex(image, profileForValidation.pageSize);
       log('success', `Loaded ${file.name}: ${formatBytes(fileSummary.usedBytes)} used data, ${fileSummary.pageCount} page(s).`);
-      setProgress({ stage: 'idle', percent: selectedPort ? 35 : 20, message: 'HEX loaded.' });
-      return true;
+      setProgress({ stage: 'idle', percent: selectedPort ? 35 : 20, message: `${file.name} loaded.` });
     } catch (error) {
-      if (readId !== fileReadIdRef.current) return false;
+      if (readId !== fileReadIdRef.current) return;
       const message = error instanceof Error ? error.message : String(error);
       setHexError(message);
-      setLastError(message);
-      log('error', `HEX validation failed: ${message}`);
-      return false;
+      setProgress({ stage: 'error', percent: 0, message: 'Could not load HEX.' });
+      log('error', message);
+    } finally {
+      if (readId === fileReadIdRef.current) setLoadingId(null);
     }
   }
 
@@ -390,7 +366,8 @@ export function App() {
 
   function finishDeviceStep(): void {
     setAwaitingDevice(false);
-    setProgress({ stage: 'idle', percent: selectedPort ? 10 : 0, message: 'Load the Latest stable HEX, then flash MCL.' });
+    if (hasBundledHex(downloads.stable)) void handleFile(downloads.stable);
+    else setProgress({ stage: 'idle', percent: selectedPort ? 10 : 0, message: 'Choose the Latest stable HEX, then flash MCL.' });
   }
 
   function downloadLog(): void {
@@ -400,6 +377,7 @@ export function App() {
 
   function clearAll(): void {
     fileReadIdRef.current += 1;
+    setLoadingId(null);
     setSelectedPort(null);
     setPortInfo(null);
     setFirmwareFile(null);
@@ -472,7 +450,7 @@ export function App() {
             <span>Device profile</span>
             <select
               value={profileId}
-              disabled={controlsLocked}
+              disabled={controlsLocked || !!loadingId}
               onChange={(event) => {
                 const nextProfile = getProfile(event.target.value);
                 applyProfile(nextProfile);
@@ -586,7 +564,7 @@ export function App() {
               onDrop={onHexDrop}
             >
               <FileCode2 size={28} />
-              <span>{firmwareFile ? firmwareFile.name : dragActive ? 'Drop HEX file here' : 'Choose or drag .hex file'}</span>
+              <span aria-live="polite">{firmwareFile?.name ?? (dragActive ? 'Drop HEX file here' : 'Choose or drag .hex file')}</span>
               <input
                 type="file"
                 accept=".hex,text/plain"
@@ -598,11 +576,10 @@ export function App() {
 
             <div className="remote-firmware">
               <div className="remote-firmware-head">
-                <strong>Downloads</strong>
-                <span>Official MCL HEX</span>
+                <strong>Official firmware</strong>
               </div>
               <div className="remote-firmware-list">
-                {[downloads.stable, downloads.beta].map((item) => {
+                {[downloads.stable, downloads.beta].filter(item => item.enabled).map((item) => {
                   return (
                     <div className="remote-firmware-row" data-firmware-id={item.id} key={item.id}>
                       <div>
@@ -614,37 +591,30 @@ export function App() {
                           </a>
                         )}
                       </div>
-                      {item.enabled && item.downloadUrl ? (
-                        <a
-                          className="firmware-download-button secondary"
-                          href={item.downloadUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`Download ${item.filename}`}
-                        >
-                          <Download size={18} />
-                          Download
-                        </a>
-                      ) : (
-                        <button type="button" disabled title={item.unavailableReason}>
-                          <Download size={18} />
-                          Download
+                      {hasBundledHex(item) ? (
+                        <button type="button" className="secondary" disabled={controlsLocked || loadingId === item.id} onClick={() => void handleFile(item)}>
+                          {loadingId === item.id ? 'Loading…' : 'Load MCL'}
                         </button>
+                      ) : item.downloadUrl && (
+                        <a className="firmware-download-button secondary" href={item.downloadUrl} target="_blank" rel="noreferrer" title={`Download ${item.filename}`}>
+                          <Download size={18} /> Download
+                        </a>
                       )}
                     </div>
                   );
                 })}
               </div>
-              {downloads.upgrader?.downloadUrl && !awaitingDevice && (
+              {downloads.upgrader && !awaitingDevice && (
                 <details className="project-guide">
                   <summary>Projects from before MCL 5.00?</summary>
-                  <p>Back up your SD card first. Download the one-time project upgrader, choose its HEX file on this page, then select <strong>Flash project upgrader</strong>. Projects created in MCL 5.00 or later can skip this step.</p>
-                  <div className="upgrade-links">
-                    <a href={downloads.upgrader.downloadUrl} target="_blank" rel="noreferrer">Download project upgrader</a>
-                    {downloads.upgrader.releaseUrl && <a href={downloads.upgrader.releaseUrl} target="_blank" rel="noreferrer">Upgrader release notes</a>}
-                  </div>
-                  <DeviceUpgradeSteps />
-                  <p>The device saves the results in <code>/Logs/upgrade.txt</code> on the SD card.</p>
+                  <p>Back up your SD card, then flash the upgrader once before installing MCL.</p>
+                  {hasBundledHex(downloads.upgrader) ? (
+                    <button type="button" disabled={controlsLocked || loadingId === downloads.upgrader.id} onClick={() => void handleFile(downloads.upgrader)}>
+                      {loadingId === downloads.upgrader.id ? 'Loading…' : 'Load project upgrader'}
+                    </button>
+                  ) : downloads.upgrader.downloadUrl && (
+                    <a href={downloads.upgrader.downloadUrl} target="_blank" rel="noreferrer">Download upgrader HEX to open here</a>
+                  )}
                 </details>
               )}
             </div>
@@ -659,13 +629,13 @@ export function App() {
             </div>
           )}
 
-          {hexError && <div className="inline-error">{hexError}</div>}
+          {hexError && <div className="inline-error" role="alert">{hexError} Choose a HEX file or retry.</div>}
           {awaitingDevice && (
             <section className="device-step" aria-label="Continue on your device">
               <h2>Continue on your device</h2>
-              <DeviceUpgradeSteps />
-              <p>The results are in <code>/Logs/upgrade.txt</code> on the SD card.</p>
-              <button type="button" onClick={finishDeviceStep}>Device is ready for MCL</button>
+              <p>Press <strong>Load / Yes</strong> to scan the card. Review the projects, then press <strong>Load / Yes</strong> again to convert them. Keep power connected.</p>
+              <p>When the screen says <strong>NOW UPGRADE TO MCL 5.10</strong>, return to OS UPGRADE or serial mode.</p>
+              <button type="button" onClick={finishDeviceStep}>{hasBundledHex(downloads.stable) ? 'Device ready — load MCL' : 'Device is ready for MCL'}</button>
             </section>
           )}
         </section>

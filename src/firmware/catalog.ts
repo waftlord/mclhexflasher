@@ -6,7 +6,6 @@ export interface RemoteHexFirmware {
   filename: string;
   downloadUrl: string | null;
   releaseUrl: string | null;
-  sha256: string | null;
   enabled: boolean;
   unavailableReason?: string;
 }
@@ -26,7 +25,6 @@ export const MCL_REMOTE_HEX_FIRMWARE: FirmwareDownloads = {
     filename: 'mcl_5_1_0.hex',
     downloadUrl: 'https://github.com/jmamma/MCL/releases/download/5.10/mcl_5_1_0.hex',
     releaseUrl: 'https://github.com/jmamma/MCL/releases/tag/5.10',
-    sha256: '1a0fb22196a439403f024422223075f83de12469346e3c165c712487f99a447f',
     enabled: true,
   },
   beta: {
@@ -37,7 +35,6 @@ export const MCL_REMOTE_HEX_FIRMWARE: FirmwareDownloads = {
     filename: 'mcl-beta.hex',
     downloadUrl: null,
     releaseUrl: null,
-    sha256: null,
     enabled: false,
     unavailableReason: 'No beta HEX available',
   },

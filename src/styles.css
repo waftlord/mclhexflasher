@@ -601,8 +601,8 @@ select {
   padding: 10px;
 }
 
-.remote-firmware-row + .remote-firmware-row {
-  border-top: 1px solid #e0e8f7;
+.remote-firmware-row:only-child {
+  grid-column: 1 / -1;
 }
 
 .remote-firmware-row > div {
@@ -659,25 +659,6 @@ select {
 .project-guide p,
 .device-step p {
   margin: 0.6rem 0;
-}
-
-.upgrade-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-}
-
-.upgrade-links a {
-  color: #194ab9;
-}
-
-.upgrade-steps {
-  margin: 0.7rem 0;
-  padding-left: 1.3rem;
-}
-
-.upgrade-steps li + li {
-  margin-top: 0.35rem;
 }
 
 .device-step {

@@ -84,7 +84,6 @@ function firmwareFromManifest(manifest: Manifest, kind: 'stable' | 'upgrader'): 
       filename: section.filename,
       downloadUrl: `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${section.filename}`,
       releaseUrl: `https://github.com/${GITHUB_REPO}/releases/tag/${tag}`,
-      sha256: null,
       enabled: true,
     };
   }

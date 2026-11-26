@@ -31,14 +31,14 @@ Open the local address printed by Vite. To build and preview the static site, ru
 
 1. Select the hardware profile and put the device in **OS UPGRADE** or serial bootloader mode. With MCL installed, hold **PAGE** at power-on to open the boot menu.
 2. Choose **Select USB device** and select the device's serial port. On compatible MegaCommand DIY USB firmware, the app can also send a serial-mode request to the selected MIDI output using Web MIDI SysEx.
-3. Load a `.hex` file for the selected device. MCL update images are available from [upstream MCL releases](https://github.com/jmamma/MCL/releases) and linked in the app.
+3. Choose **Load MCL** in **Firmware HEX**, or open a local `.hex` file. The flasher checks the bundled image against its published SHA-256 checksum before loading it. Newer releases without a bundled image offer a download from [upstream MCL releases](https://github.com/jmamma/MCL/releases).
 4. Select **Flash** and wait for the result before disconnecting the device. The browser workflow writes flash without reading it back.
 
 ### Projects created before MCL 5.00
 
-Back up the SD card. In **Firmware HEX**, open **Projects from before MCL 5.00?** and download the one-time upgrader. Load its HEX and select **Flash project upgrader**. Both hardware profiles use the same file.
+Back up the SD card. In **Firmware HEX**, open **Projects from before MCL 5.00?** and choose **Load project upgrader**. Select **Flash project upgrader** when ready. Both hardware profiles use the same file.
 
-On the device, **Load / Yes** scans the card, then a second **Load / Yes** confirms conversion. Keep power connected until the device says **NOW UPGRADE TO MCL 5.10**. Select **Device is ready for MCL** in the flasher, return the device to OS UPGRADE or serial mode, and load and flash **Latest stable**. The device writes its report to `/Logs/upgrade.txt`.
+On the device, **Load / Yes** scans the card, then a second **Load / Yes** confirms conversion. Keep power connected until the device says **NOW UPGRADE TO MCL 5.10**. Return the device to OS UPGRADE or serial mode, then select **Device ready — load MCL** and **Flash**. The device writes its report to `/Logs/upgrade.txt`.
 
 Projects created in MCL 5.00–5.02 open directly in MCL 5.10. [MCL 5.10 release notes](https://github.com/jmamma/MCL/releases/tag/5.10)
 

@@ -1,0 +1,2 @@
+# Keep upstream release bytes intact for SHA-256 verification.
+src/firmware/images/*.hex binary

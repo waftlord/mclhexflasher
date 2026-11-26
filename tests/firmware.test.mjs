@@ -99,3 +99,25 @@ test('DIY bootloader version queries use consecutive command sequences', async (
   assert.equal(await programmer.readVersion(), 'HW 1, SW 2.3, build 1029');
   assert.deepEqual(sequences, [1, 2, 3, 4, 5]);
 });
+
+test('direct loading selects the exact official release and verifies the bundled bytes', async t => {
+  const { readFile } = await import('node:fs/promises');
+  const { hasBundledHex, loadBundledHex } = await vite.ssrLoadModule('/src/firmware/bundledHex.ts');
+  const options = resolveFirmwareDownloads(stable + upgrade, null);
+  const fetch = t.mock.method(globalThis, 'fetch');
+  for (const item of [options.stable, options.upgrader]) {
+    const bytes = await readFile(new URL('../src/firmware/images/' + item.filename, import.meta.url));
+    fetch.mock.mockImplementation(async () => new Response(bytes));
+    assert.equal(hasBundledHex(item), true);
+    const file = await loadBundledHex(item);
+    assert.equal(file.name, item.filename);
+    assert.deepEqual(Buffer.from(await file.arrayBuffer()), bytes);
+  }
+  const future = resolveFirmwareDownloads(section('megacmd_upgrader', upgradeName, '5.11'), null).upgrader;
+  assert.equal(hasBundledHex(future), false);
+  await assert.rejects(loadBundledHex(future), /release page/);
+  fetch.mock.mockImplementation(async () => new Response(':0100000000FF\n:00000001FF'));
+  await assert.rejects(loadBundledHex(options.upgrader), /checksum/);
+  fetch.mock.mockImplementation(async () => new Response(null, { status: 404 }));
+  await assert.rejects(loadBundledHex(options.upgrader), /Could not load/);
+});
