@@ -531,7 +531,10 @@ select {
 }
 
 .drop-zone input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
 }
 
 .summary-grid {
@@ -633,6 +636,66 @@ select {
 .remote-firmware-row button,
 .remote-firmware-row .firmware-download-button {
   padding-inline: 0.8rem;
+}
+
+.remote-firmware-row a.firmware-download-button {
+  color: white;
+}
+
+.project-guide,
+.device-step {
+  color: #42536d;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.project-guide summary {
+  width: fit-content;
+  color: #355070;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.project-guide p,
+.device-step p {
+  margin: 0.6rem 0;
+}
+
+.upgrade-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.upgrade-links a {
+  color: #194ab9;
+}
+
+.upgrade-steps {
+  margin: 0.7rem 0;
+  padding-left: 1.3rem;
+}
+
+.upgrade-steps li + li {
+  margin-top: 0.35rem;
+}
+
+.device-step {
+  margin-top: 12px;
+  border-left: 3px solid #40619f;
+  padding: 12px 16px;
+  background: #f7faff;
+}
+
+.site-footer {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+.site-footer a {
+  color: #52617b;
+  text-underline-offset: 0.18em;
 }
 
 .inline-error {

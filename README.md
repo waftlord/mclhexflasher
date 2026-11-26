@@ -34,6 +34,14 @@ Open the local address printed by Vite. To build and preview the static site, ru
 3. Load a `.hex` file for the selected device. MCL update images are available from [upstream MCL releases](https://github.com/jmamma/MCL/releases) and linked in the app.
 4. Select **Flash** and wait for the result before disconnecting the device. The browser workflow writes flash without reading it back.
 
+### Projects created before MCL 5.00
+
+Back up the SD card. In **Firmware HEX**, open **Projects from before MCL 5.00?** and download the one-time upgrader. Load its HEX and select **Flash project upgrader**. Both hardware profiles use the same file.
+
+On the device, **Load / Yes** scans the card, then a second **Load / Yes** confirms conversion. Keep power connected until the device says **NOW UPGRADE TO MCL 5.10**. Select **Device is ready for MCL** in the flasher, return the device to OS UPGRADE or serial mode, and load and flash **Latest stable**. The device writes its report to `/Logs/upgrade.txt`.
+
+Projects created in MCL 5.00–5.02 open directly in MCL 5.10. [MCL 5.10 release notes](https://github.com/jmamma/MCL/releases/tag/5.10)
+
 ## License
 
 Original code is available under the [MIT License](LICENSE). See [Third-party notices](THIRD_PARTY_NOTICES.md) for upstream references and license terms.

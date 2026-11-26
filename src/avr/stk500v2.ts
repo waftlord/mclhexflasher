@@ -100,14 +100,11 @@ export class Stk500v2Programmer {
   }
 
   async readVersion(): Promise<string> {
-    const values = await Promise.all([
-      this.getParameter(PARAM_HW_VER).catch(() => undefined),
-      this.getParameter(PARAM_SW_MAJOR).catch(() => undefined),
-      this.getParameter(PARAM_SW_MINOR).catch(() => undefined),
-      this.getParameter(PARAM_BUILD_NUMBER_HIGH).catch(() => undefined),
-      this.getParameter(PARAM_BUILD_NUMBER_LOW).catch(() => undefined),
-    ]);
-
+    // Each reply advances the shared sequence number before the next command.
+    const values = [];
+    for (const parameter of [PARAM_HW_VER, PARAM_SW_MAJOR, PARAM_SW_MINOR, PARAM_BUILD_NUMBER_HIGH, PARAM_BUILD_NUMBER_LOW]) {
+      values.push(await this.getParameter(parameter).catch(() => undefined));
+    }
     const [hw, major, minor, buildHigh, buildLow] = values;
     const build = buildHigh !== undefined && buildLow !== undefined ? (buildHigh << 8) | buildLow : undefined;
     const version = `HW ${hw ?? '?'}, SW ${major ?? '?'}.${minor ?? '?'}${build !== undefined ? `, build ${build}` : ''}`;

@@ -1,5 +1,7 @@
 node_modules/
 dist/
+/archive/
+/*.zip
 .DS_Store
 *.log
 .env

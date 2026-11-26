@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Cpu, Download, FileCode2, PlugZap, RotateC
 import { flashFirmware, FlashProgress } from './avr/flasher';
 import { FirmwareImage, readHexFile, summarizeHex } from './avr/intelHex';
 import { DEFAULT_PROFILE_ID, getProfile, HARDWARE_PROFILES, HardwareProfile } from './avr/profiles';
-import { MCL_REMOTE_HEX_FIRMWARE, RemoteHexFirmware } from './firmware/catalog';
+import { isProjectUpgraderFile, MCL_REMOTE_HEX_FIRMWARE } from './firmware/catalog';
 import { getMclFirmwareDownloadOptions } from './firmware/githubReleases';
 import { createLogEntry, downloadTextFile, LogEntry, LogLevel, logEntriesToText } from './lib/logger';
 import { formatBytes, formatHexAddress, formatUsbId } from './lib/format';
@@ -43,6 +43,16 @@ function resetStrategyLabel(profile: HardwareProfile): string {
   return 'Arduino reset';
 }
 
+function DeviceUpgradeSteps() {
+  return (
+    <ol className="upgrade-steps">
+      <li>At <strong>SCAN FOR PROJECTS?</strong>, press <strong>Load / Yes</strong> to scan the SD card, or <strong>Save / No</strong> to stop. Scanning only reads the card.</li>
+      <li>Review the results (UPGRADE, UP TO DATE or CAN’T READ). At <strong>UPGRADE n PROJECTS?</strong>, press <strong>Load / Yes</strong> to convert them. Keep the device powered throughout conversion.</li>
+      <li>When the display says <strong>NOW UPGRADE TO MCL 5.10</strong>, return to OS UPGRADE or serial mode and flash the MCL firmware from <strong>Latest stable</strong>.</li>
+    </ol>
+  );
+}
+
 export function App() {
   const [profileId, setProfileId] = useState(DEFAULT_PROFILE_ID);
   const profile = useMemo(() => getProfile(profileId), [profileId]);
@@ -61,7 +71,8 @@ export function App() {
   const [midiBusy, setMidiBusy] = useState(false);
   const [midiMessage, setMidiMessage] = useState<string | null>(null);
   const [midiError, setMidiError] = useState<string | null>(null);
-  const [firmwareDownloadOptions, setFirmwareDownloadOptions] = useState<RemoteHexFirmware[]>(MCL_REMOTE_HEX_FIRMWARE);
+  const [downloads, setDownloads] = useState(MCL_REMOTE_HEX_FIRMWARE);
+  const [awaitingDevice, setAwaitingDevice] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fileReadIdRef = useRef(0);
@@ -69,7 +80,9 @@ export function App() {
 
   const serialSupported = browserSupportsSerial();
   const midiSupported = browserSupportsMidi();
-  const canFlash = Boolean(serialSupported && selectedPort && firmwareImage && !hexError && !busy);
+  const upgraderLoaded = !!firmwareFile && isProjectUpgraderFile(firmwareFile.name, downloads.upgrader);
+  const controlsLocked = busy || awaitingDevice;
+  const canFlash = Boolean(serialSupported && selectedPort && firmwareImage && !hexError && !controlsLocked);
   const summary = useMemo(() => (firmwareImage ? summarizeHex(firmwareImage, profile.pageSize) : null), [firmwareImage, profile.pageSize]);
   const diyProfile = profile.protocol === 'stk500v2';
 
@@ -114,7 +127,7 @@ export function App() {
 
     getMclFirmwareDownloadOptions()
       .then((options) => {
-        if (!cancelled) setFirmwareDownloadOptions(options);
+        if (!cancelled) setDownloads(options);
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -251,7 +264,7 @@ export function App() {
 
   function onHexDragOver(event: React.DragEvent<HTMLLabelElement>): void {
     event.preventDefault();
-    if (!busy) setDragActive(true);
+    if (!controlsLocked) setDragActive(true);
   }
 
   function onHexDragLeave(event: React.DragEvent<HTMLLabelElement>): void {
@@ -264,7 +277,7 @@ export function App() {
   function onHexDrop(event: React.DragEvent<HTMLLabelElement>): void {
     event.preventDefault();
     setDragActive(false);
-    if (busy) return;
+    if (controlsLocked) return;
 
     const file = event.dataTransfer.files?.[0] ?? null;
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -332,7 +345,7 @@ export function App() {
 
   async function onSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
-    if (!canFlash || !selectedPort || !firmwareImage) return;
+    if (!canFlash || !selectedPort || !firmwareImage || abortControllerRef.current) return;
 
     setBusy(true);
     setLastError(null);
@@ -352,6 +365,13 @@ export function App() {
         onProgress: setProgress,
         signal: abortControllerRef.current.signal,
       });
+      if (upgraderLoaded) {
+        setAwaitingDevice(true);
+        setFirmwareFile(null);
+        setFirmwareImage(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setProgress({ stage: 'done', percent: 100, message: 'Project upgrader written. Continue on your device.' });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setLastError(message);
@@ -366,6 +386,11 @@ export function App() {
   function cancelFlash(): void {
     abortControllerRef.current?.abort();
     log('warn', 'Cancel requested. Current serial command will finish or time out first.');
+  }
+
+  function finishDeviceStep(): void {
+    setAwaitingDevice(false);
+    setProgress({ stage: 'idle', percent: selectedPort ? 10 : 0, message: 'Load the Latest stable HEX, then flash MCL.' });
   }
 
   function downloadLog(): void {
@@ -447,7 +472,7 @@ export function App() {
             <span>Device profile</span>
             <select
               value={profileId}
-              disabled={busy}
+              disabled={controlsLocked}
               onChange={(event) => {
                 const nextProfile = getProfile(event.target.value);
                 applyProfile(nextProfile);
@@ -496,10 +521,10 @@ export function App() {
           <div className="usb-row">
             <div className="usb-primary">
               <div className="button-row">
-                <button type="button" className="secondary" onClick={selectDevice} disabled={!serialSupported || busy}>
+                <button type="button" className="secondary" onClick={selectDevice} disabled={!serialSupported || controlsLocked}>
                   <Usb size={18} /> Select USB device
                 </button>
-                <button type="button" onClick={usePreviouslyAuthorisedDevice} disabled={!serialSupported || busy}>
+                <button type="button" onClick={usePreviouslyAuthorisedDevice} disabled={!serialSupported || controlsLocked}>
                   <PlugZap size={18} /> Use authorised
                 </button>
               </div>
@@ -517,7 +542,7 @@ export function App() {
             <details className="rescue-panel">
               <summary>Device not showing as USB serial?</summary>
               <div className="button-row">
-                <button type="button" onClick={loadMidiOutputs} disabled={!midiSupported || busy || midiBusy}>
+                <button type="button" onClick={loadMidiOutputs} disabled={!midiSupported || controlsLocked || midiBusy}>
                   {midiBusy ? 'Looking for MIDI...' : 'Choose MIDI output'}
                 </button>
               </div>
@@ -526,7 +551,7 @@ export function App() {
                 <div className="midi-rescue-controls">
                   <label className="field">
                     <span>MIDI output</span>
-                    <select value={selectedMidiOutputId} disabled={busy || midiBusy} onChange={(event) => setSelectedMidiOutputId(event.target.value)}>
+                    <select value={selectedMidiOutputId} disabled={controlsLocked || midiBusy} onChange={(event) => setSelectedMidiOutputId(event.target.value)}>
                       {midiOutputs.map((output) => (
                         <option key={output.id} value={output.id}>
                           {output.name || output.manufacturer || 'Unnamed MIDI output'}
@@ -534,7 +559,7 @@ export function App() {
                       ))}
                     </select>
                   </label>
-                  <button type="button" className="secondary" onClick={sendMidiSerialModeRequest} disabled={busy || midiBusy || !selectedMidiOutputId}>
+                  <button type="button" className="secondary" onClick={sendMidiSerialModeRequest} disabled={controlsLocked || midiBusy || !selectedMidiOutputId}>
                     Send serial-mode request
                   </button>
                 </div>
@@ -566,7 +591,7 @@ export function App() {
                 type="file"
                 accept=".hex,text/plain"
                 ref={fileInputRef}
-                disabled={busy}
+                disabled={controlsLocked}
                 onChange={onFileChange}
               />
             </label>
@@ -577,7 +602,7 @@ export function App() {
                 <span>Official MCL HEX</span>
               </div>
               <div className="remote-firmware-list">
-                {firmwareDownloadOptions.map((item) => {
+                {[downloads.stable, downloads.beta].map((item) => {
                   return (
                     <div className="remote-firmware-row" data-firmware-id={item.id} key={item.id}>
                       <div>
@@ -610,6 +635,18 @@ export function App() {
                   );
                 })}
               </div>
+              {downloads.upgrader?.downloadUrl && !awaitingDevice && (
+                <details className="project-guide">
+                  <summary>Projects from before MCL 5.00?</summary>
+                  <p>Back up your SD card first. Download the one-time project upgrader, choose its HEX file on this page, then select <strong>Flash project upgrader</strong>. Projects created in MCL 5.00 or later can skip this step.</p>
+                  <div className="upgrade-links">
+                    <a href={downloads.upgrader.downloadUrl} target="_blank" rel="noreferrer">Download project upgrader</a>
+                    {downloads.upgrader.releaseUrl && <a href={downloads.upgrader.releaseUrl} target="_blank" rel="noreferrer">Upgrader release notes</a>}
+                  </div>
+                  <DeviceUpgradeSteps />
+                  <p>The device saves the results in <code>/Logs/upgrade.txt</code> on the SD card.</p>
+                </details>
+              )}
             </div>
           </div>
 
@@ -623,12 +660,20 @@ export function App() {
           )}
 
           {hexError && <div className="inline-error">{hexError}</div>}
+          {awaitingDevice && (
+            <section className="device-step" aria-label="Continue on your device">
+              <h2>Continue on your device</h2>
+              <DeviceUpgradeSteps />
+              <p>The results are in <code>/Logs/upgrade.txt</code> on the SD card.</p>
+              <button type="button" onClick={finishDeviceStep}>Device is ready for MCL</button>
+            </section>
+          )}
         </section>
 
         <section className="card span-12 action-card">
           <div>
-            <h2>Flash update</h2>
-            <p className="verify-note">Write-only browser flow. The device should reboot after a successful flash.</p>
+            <h2>{upgraderLoaded ? 'Flash project upgrader' : 'Flash update'}</h2>
+            <p className="verify-note">{upgraderLoaded ? 'Back up your SD card first. After flashing, follow the prompts on your device to convert older projects.' : 'Write-only browser flow. The device should reboot after a successful flash.'}</p>
           </div>
           <div className="action-buttons">
             {busy ? (
@@ -637,10 +682,10 @@ export function App() {
               </button>
             ) : (
               <button type="submit" className="primary" disabled={!canFlash}>
-                <CheckCircle2 size={18} /> Flash
+                <CheckCircle2 size={18} /> {upgraderLoaded ? 'Flash project upgrader' : 'Flash'}
               </button>
             )}
-            <button type="button" onClick={clearAll} disabled={busy}>
+            <button type="button" onClick={clearAll} disabled={controlsLocked}>
               <RotateCcw size={18} /> Reset
             </button>
             <button type="button" onClick={downloadLog} disabled={logs.length === 0}>
@@ -672,6 +717,9 @@ export function App() {
           )}
         </div>
       </details>
+      <footer className="site-footer">
+        <a href="https://github.com/waftlord/mclhexflasher" target="_blank" rel="noreferrer">MCL Hex Flasher on GitHub</a>
+      </footer>
     </main>
   );
 }

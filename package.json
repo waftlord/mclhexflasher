@@ -1,7 +1,7 @@
 {
   "name": "mclhexflasher",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "description": "Browser-based Intel HEX firmware updater for MegaCommand DIY and MegaCMD.",
@@ -9,6 +9,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
